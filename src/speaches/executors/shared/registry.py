@@ -13,6 +13,7 @@ from speaches.executors.pyannote_diarization import (
 from speaches.executors.silero_vad_v5 import SileroVADModelRegistry
 from speaches.executors.wespeaker_speaker_embedding import WespeakerSpeakerEmbeddingModelRegistry
 from speaches.executors.whisper import WhisperModelRegistry
+from speaches.executors.whisper_cpp import WhisperCppModelRegistry
 
 if TYPE_CHECKING:
     from speaches.config import Config
@@ -27,16 +28,29 @@ from speaches.executors.wespeaker_speaker_embedding import (
     wespeaker_speaker_embedding_model_registry,
 )
 from speaches.executors.whisper import WhisperModelManager, whisper_model_registry
+from speaches.executors.whisper_cpp import (
+    WhisperCppModelManager,
+    whisper_cpp_model_registry,
+)
 
 
 class ExecutorRegistry:
     def __init__(self, config: Config) -> None:
-        self._whisper_executor = Executor[WhisperModelManager, WhisperModelRegistry](
-            name="whisper",
-            model_manager=WhisperModelManager(config.stt_model_ttl, config.whisper),
-            model_registry=whisper_model_registry,
-            task="automatic-speech-recognition",
-        )
+        self._whisper_executor: Executor
+        if config.whisper_backend == "whisper_cpp":
+            self._whisper_executor = Executor[WhisperCppModelManager, WhisperCppModelRegistry](
+                name="whisper",
+                model_manager=WhisperCppModelManager(config.stt_model_ttl),
+                model_registry=whisper_cpp_model_registry,
+                task="automatic-speech-recognition",
+            )
+        else:
+            self._whisper_executor = Executor[WhisperModelManager, WhisperModelRegistry](
+                name="whisper",
+                model_manager=WhisperModelManager(config.stt_model_ttl, config.whisper),
+                model_registry=whisper_model_registry,
+                task="automatic-speech-recognition",
+            )
         self._parakeet_executor = Executor[ParakeetModelManager, NemoConformerTdtModelRegistry](
             name="parakeet",
             model_manager=ParakeetModelManager(config.stt_model_ttl, config.unstable_ort_opts),
