@@ -18,6 +18,17 @@ from speaches.dependencies import get_config
 from speaches.main import create_app
 
 DISABLE_LOGGERS = ["multipart.multipart", "faster_whisper"]
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:  # noqa: ARG001
+    if os.environ.get("SPEACHES_HAS_VULKAN") == "1":
+        return
+    skip = pytest.mark.skip(reason="requires Vulkan device; set SPEACHES_HAS_VULKAN=1 to run")
+    for item in items:
+        if "requires_vulkan" in item.keywords:
+            item.add_marker(skip)
+
+
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 # TODO: figure out a way to initialize the config without parsing environment variables, as those may interfere with the tests
 DEFAULT_WHISPER_CONFIG = WhisperConfig()

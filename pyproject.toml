@@ -93,6 +93,7 @@ filterwarnings = [
 markers = [
     "requires_openai",
     "requires_gated_hf_model",
+    "requires_vulkan",
 ]
 
 [tool.uv]
