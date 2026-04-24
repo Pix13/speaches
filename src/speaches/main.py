@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import logging
 import os
+import subprocess
 from typing import TYPE_CHECKING
 import uuid
 
@@ -61,6 +62,8 @@ from speaches.utils import APIProxyError
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
+    from speaches.config import Config
+
 # https://swagger.io/docs/specification/v3_0/grouping-operations-with-tags/
 # https://fastapi.tiangolo.com/tutorial/metadata/#metadata-for-tags
 TAGS_METADATA = [
@@ -76,11 +79,33 @@ TAGS_METADATA = [
     },
 ]
 
+logger = logging.getLogger(__name__)
+
+
+def log_vulkan_summary_if_enabled(config: Config) -> None:
+    if config.whisper_backend != "whisper_cpp":
+        return
+    try:
+        result = subprocess.run(
+            ["vulkaninfo", "--summary"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except FileNotFoundError:
+        logger.warning("vulkaninfo not found; cannot report Vulkan device info")
+        return
+    if result.returncode != 0:
+        logger.warning(f"vulkaninfo exited with status {result.returncode}")
+        return
+    logger.info(f"Vulkan summary:\n{result.stdout}")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    logger = logging.getLogger(__name__)
     config = get_config()
+    log_vulkan_summary_if_enabled(config)
 
     if config.preload_models:
         logger.info(f"Preloading {len(config.preload_models)} models on startup")
