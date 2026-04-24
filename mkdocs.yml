@@ -42,6 +42,7 @@ plugins:
 nav:
   - Introduction: index.md
   - Installation: installation.md
+  - Vulkan (non-NVIDIA GPUs): vulkan.md
   - Usage / Capabilities:
       - Model Discovery: usage/model-discovery.md
       - Speech-to-Text: usage/speech-to-text.md
