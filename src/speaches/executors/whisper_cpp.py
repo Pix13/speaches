@@ -2,17 +2,27 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import time
 from typing import TYPE_CHECKING
 
 import huggingface_hub
+import openai.types.audio
 from pydantic import BaseModel
 
 from speaches.api_types import Model
+from speaches.executors.shared.base_model_manager import BaseModelManager
 from speaches.hf_utils import HfModelFilter
 from speaches.model_registry import ModelRegistry
+from speaches.text_utils import format_as_srt, format_as_vtt
+from speaches.tracing import traced
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Iterable
+
+    from speaches.executors.shared.handler_protocol import (
+        NonStreamingTranscriptionResponse,
+        TranscriptionRequest,
+    )
 
 LIBRARY_NAME = "whisper.cpp"
 TASK_NAME_TAG = "automatic-speech-recognition"
@@ -78,3 +88,106 @@ class WhisperCppModelRegistry(ModelRegistry[Model, WhisperCppModelFiles]):
 
 
 whisper_cpp_model_registry = WhisperCppModelRegistry(hf_model_filter=hf_model_filter)
+
+
+def _segment_text(segments: Iterable) -> str:
+    return "".join(s.text for s in segments).strip()
+
+
+def _segment_start(seg: object) -> float:
+    return float(seg.t0) / 100.0  # type: ignore[attr-defined]
+
+
+def _segment_end(seg: object) -> float:
+    return float(seg.t1) / 100.0  # type: ignore[attr-defined]
+
+
+def _segments_to_transcription_response(
+    segments: list,
+    *,
+    language: str,
+    duration: float,
+    response_format: openai.types.AudioResponseFormat,
+    word_timestamps: bool,  # noqa: ARG001
+) -> NonStreamingTranscriptionResponse:
+    text = _segment_text(segments)
+    match response_format:
+        case "text":
+            return text, "text/plain"
+        case "json":
+            return openai.types.audio.Transcription(text=text)
+        case "verbose_json":
+            return openai.types.audio.TranscriptionVerbose(
+                language=language,
+                duration=duration,
+                text=text,
+                segments=[
+                    openai.types.audio.TranscriptionSegment(
+                        id=i,
+                        seek=0,
+                        start=_segment_start(s),
+                        end=_segment_end(s),
+                        text=s.text,
+                        tokens=[],
+                        temperature=0.0,
+                        avg_logprob=0.0,
+                        compression_ratio=0.0,
+                        no_speech_prob=0.0,
+                    )
+                    for i, s in enumerate(segments)
+                ],
+                words=None,
+            )
+        case "vtt":
+            return (
+                "".join(format_as_vtt(s.text, _segment_start(s), _segment_end(s), i) for i, s in enumerate(segments)),
+                "text/vtt",
+            )
+        case "srt":
+            return (
+                "".join(format_as_srt(s.text, _segment_start(s), _segment_end(s), i) for i, s in enumerate(segments)),
+                "text/plain",
+            )
+
+
+class WhisperCppModelManager(BaseModelManager[object]):
+    def __init__(self, ttl: int) -> None:
+        super().__init__(ttl)
+
+    def _load_fn(self, model_id: str) -> object:
+        from pywhispercpp.model import Model as WhisperCppModel
+
+        model_files = whisper_cpp_model_registry.get_model_files(model_id)
+        return WhisperCppModel(model=str(model_files.model))
+
+    @traced()
+    def handle_non_streaming_transcription_request(
+        self,
+        request: TranscriptionRequest,
+        **_kwargs,
+    ) -> NonStreamingTranscriptionResponse:
+        if request.response_format == "diarized_json":
+            raise NotImplementedError(
+                f"'{request.response_format}' response format is not supported for '{request.model}' model."
+            )
+        started = time.perf_counter()
+        with self.load_model(request.model) as model:
+            segments = list(
+                model.transcribe(
+                    request.audio.data,
+                    language=request.language or "auto",
+                    initial_prompt=request.prompt or "",
+                    temperature=request.temperature,
+                    translate=False,
+                    token_timestamps="word" in request.timestamp_granularities,
+                )
+            )
+        res = _segments_to_transcription_response(
+            segments,
+            language=request.language or "auto",
+            duration=request.audio.duration,
+            response_format=request.response_format,
+            word_timestamps="word" in request.timestamp_granularities,
+        )
+        logger.info(f"Transcribed {request.audio.duration} seconds of audio in {time.perf_counter() - started} seconds")
+        return res
