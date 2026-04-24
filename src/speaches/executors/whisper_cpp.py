@@ -14,13 +14,14 @@ from speaches.executors.shared.base_model_manager import BaseModelManager
 from speaches.hf_utils import HfModelFilter
 from speaches.model_registry import ModelRegistry
 from speaches.text_utils import format_as_srt, format_as_vtt
-from speaches.tracing import traced
+from speaches.tracing import traced, traced_generator
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable
 
     from speaches.executors.shared.handler_protocol import (
         NonStreamingTranscriptionResponse,
+        StreamingTranscriptionEvent,
         TranscriptionRequest,
     )
 
@@ -191,3 +192,39 @@ class WhisperCppModelManager(BaseModelManager[object]):
         )
         logger.info(f"Transcribed {request.audio.duration} seconds of audio in {time.perf_counter() - started} seconds")
         return res
+
+    @traced_generator()
+    def handle_streaming_transcription_request(
+        self,
+        request: TranscriptionRequest,
+        **_kwargs,
+    ) -> Generator[StreamingTranscriptionEvent]:
+        started = time.perf_counter()
+        with self.load_model(request.model) as model:
+            segments = model.transcribe(
+                request.audio.data,
+                language=request.language or "auto",
+                initial_prompt=request.prompt or "",
+                temperature=request.temperature,
+                translate=False,
+                token_timestamps="word" in request.timestamp_granularities,
+            )
+            collected: list[str] = []
+            for segment in segments:
+                collected.append(segment.text)
+                yield openai.types.audio.TranscriptionTextDeltaEvent(
+                    type="transcript.text.delta", delta=segment.text, logprobs=None
+                )
+            yield openai.types.audio.TranscriptionTextDoneEvent(
+                type="transcript.text.done", text="".join(collected), logprobs=None
+            )
+        logger.info(f"Transcribed {request.audio.duration} seconds of audio in {time.perf_counter() - started} seconds")
+
+    def handle_transcription_request(
+        self,
+        request: TranscriptionRequest,
+        **kwargs,
+    ) -> NonStreamingTranscriptionResponse | Generator[StreamingTranscriptionEvent]:
+        if request.stream:
+            return self.handle_streaming_transcription_request(request, **kwargs)
+        return self.handle_non_streaming_transcription_request(request, **kwargs)

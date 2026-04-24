@@ -58,3 +58,18 @@ def test_non_streaming_transcription_returns_json() -> None:
 
     assert isinstance(resp, openai.types.audio.Transcription)
     assert resp.text.strip() == "hello world"
+
+
+def test_streaming_transcription_emits_delta_then_done() -> None:
+    mgr = WhisperCppModelManager(ttl=-1)
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = [
+        _fake_segment(" hello", 0.0, 0.5),
+        _fake_segment(" world", 0.5, 1.0),
+    ]
+
+    with patch.object(WhisperCppModelManager, "_load_fn", return_value=fake_model):
+        events = list(mgr.handle_streaming_transcription_request(_make_request(stream=True)))
+
+    assert [e.type for e in events] == ["transcript.text.delta", "transcript.text.delta", "transcript.text.done"]
+    assert events[-1].text.strip() == "hello world"
