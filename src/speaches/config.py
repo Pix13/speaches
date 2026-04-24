@@ -10,6 +10,8 @@ type Quantization = Literal[
     "int8", "int8_float16", "int8_bfloat16", "int8_float32", "int16", "float16", "bfloat16", "float32", "default"
 ]
 
+type WhisperBackend = Literal["faster_whisper", "whisper_cpp"]
+
 
 class WhisperConfig(BaseModel):
     """See https://github.com/SYSTRAN/faster-whisper/blob/master/faster_whisper/transcribe.py#L599."""
@@ -47,6 +49,13 @@ class Config(BaseSettings):
     """
 
     model_config = SettingsConfigDict(env_nested_delimiter="__")
+
+    whisper_backend: WhisperBackend = "faster_whisper"
+    """
+    Which Whisper inference backend to use.
+    - `faster_whisper` (default): CTranslate2-based, CPU/CUDA.
+    - `whisper_cpp`: whisper.cpp via pywhispercpp, CPU/CUDA/Vulkan.
+    """
 
     stt_model_ttl: int = Field(default=300, ge=-1)
     """
