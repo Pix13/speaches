@@ -1,0 +1,22 @@
+# include:
+#   - compose.observability.yaml
+services:
+  speaches:
+    extends:
+      file: compose.yaml
+      service: speaches
+    image: ghcr.io/speaches-ai/speaches:latest-vulkan
+    build:
+      context: .
+      dockerfile: Dockerfile.vulkan
+    environment:
+      - WHISPER_BACKEND=whisper_cpp
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    volumes:
+      - hf-hub-cache:/home/ubuntu/.cache/huggingface/hub
+volumes:
+  hf-hub-cache:
