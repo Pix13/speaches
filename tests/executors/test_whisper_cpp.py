@@ -73,3 +73,29 @@ def test_streaming_transcription_emits_delta_then_done() -> None:
 
     assert [e.type for e in events] == ["transcript.text.delta", "transcript.text.delta", "transcript.text.done"]
     assert events[-1].text.strip() == "hello world"
+
+
+def test_translation_returns_json() -> None:
+    from speaches.executors.shared.handler_protocol import TranslationRequest
+    from speaches.executors.silero_vad_v5 import VadOptions
+
+    audio = Audio(data=np.zeros(16000, dtype=np.float32), sample_rate=16000)
+    req = TranslationRequest(
+        audio=audio,
+        model="ggerganov/whisper.cpp/ggml-tiny.en.bin",
+        prompt=None,
+        response_format="json",
+        temperature=0.0,
+        speech_segments=[],
+        vad_options=VadOptions(),
+    )
+
+    mgr = WhisperCppModelManager(ttl=-1)
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = [_fake_segment(" bonjour")]
+    with patch.object(WhisperCppModelManager, "_load_fn", return_value=fake_model):
+        resp = mgr.handle_translation_request(req)
+
+    assert isinstance(resp, openai.types.audio.Translation)
+    assert resp.text.strip() == "bonjour"
+    assert fake_model.transcribe.call_args.kwargs["translate"] is True
