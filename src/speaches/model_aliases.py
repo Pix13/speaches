@@ -5,22 +5,41 @@ from typing import Annotated
 
 from pydantic import BeforeValidator, Field
 
-MODEL_ID_ALIASES_PATH = Path("model_aliases.json")  # TODO: make configurable
+from speaches.config import Config
+
+MODEL_ID_ALIASES_PATH = Path("model_aliases.json")
+
+type AliasValue = str | dict[str, str]
 
 
 @lru_cache
-def load_model_id_aliases() -> dict[str, str]:
+def load_model_id_aliases() -> dict[str, AliasValue]:
     return json.loads(MODEL_ID_ALIASES_PATH.read_text())
 
 
-def resolve_model_id_alias(model_id: str) -> str:
-    model_id_aliases = load_model_id_aliases()
-    return model_id_aliases.get(model_id, model_id)
+def resolve_model_id_alias_for_backend(
+    model_id: str,
+    backend: str,
+    *,
+    aliases: dict[str, AliasValue] | None = None,
+) -> str:
+    table = load_model_id_aliases() if aliases is None else aliases
+    value = table.get(model_id)
+    if value is None:
+        return model_id
+    if isinstance(value, str):
+        return value
+    return value.get(backend, model_id)
+
+
+def _resolve_current(model_id: str) -> str:
+    backend = Config().whisper_backend
+    return resolve_model_id_alias_for_backend(model_id, backend)
 
 
 ModelId = Annotated[
     str,
-    BeforeValidator(resolve_model_id_alias),
+    BeforeValidator(_resolve_current),
     Field(
         min_length=1,
         description="The ID of the model. You can get a list of available models by calling `/v1/models`.",
