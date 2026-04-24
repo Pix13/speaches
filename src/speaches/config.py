@@ -21,6 +21,20 @@ class WhisperConfig(BaseModel):
     num_workers: int = 1
 
 
+class WhisperVulkanConfig(BaseModel):
+    """Configuration for Vulkan-accelerated STT via CTranslate2.
+
+    Uses faster-whisper with the 'vulkan' device, enabling GPU inference on
+    AMD GPUs (RADV/Mesa), Intel Arc, and any platform with a Vulkan-capable GPU.
+    See https://github.com/SYSTRAN/CTranslate2/blob/master/docs/devices.md#vulkan-gpu-acceleration
+    """
+
+    device_index: int | list[int] = 0
+    compute_type: Quantization = "default"
+    cpu_threads: int = 0
+    num_workers: int = 1
+
+
 class OrtOptions(BaseModel):
     exclude_providers: list[str] = ["TensorrtExecutionProvider"]
     """
@@ -98,6 +112,19 @@ class Config(BaseSettings):
     """
 
     whisper: WhisperConfig = WhisperConfig()
+
+    whisper_vulkan: WhisperVulkanConfig | None = None
+    """
+    Configuration for the Vulkan-accelerated STT backend. When set, a separate
+    executor is created that runs ctranslate2 ASR models on Vulkan GPUs instead of
+    CUDA/CPU. Set any field to enable with defaults, e.g.:
+
+        export WHISPER_VULKAN__DEVICE_INDEX='[0]'
+
+    or simply:
+
+        export WHISPER_VULKAN={}
+"""
 
     # TODO: remove the underscore prefix from the field name
     _unstable_vad_filter: bool = True

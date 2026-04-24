@@ -49,6 +49,7 @@ force-sort-within-sections = true
 # https://docs.astral.sh/ruff/settings/#per-file-ignores
 [lint.per-file-ignores]
 "src/speaches/types/**.py" = ["PYI051"]
+"src/speaches/executors/shared/registry.py" = ["E402", "TC001"]
 
 [format]
 # Like Black, use double quotes for strings.
